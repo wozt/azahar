@@ -11,6 +11,10 @@
 #include "core/core.h"
 #include "core/dumping/backend.h"
 
+#ifdef BOTTOM_SCREEN_ENABLED
+#include "video_core/renderer_opengl/bottom_screen_bridge.h"
+#endif
+
 namespace AudioCore {
 
 DspInterface::DspInterface(Core::System& system_) : system(system_) {}
@@ -117,6 +121,12 @@ void DspInterface::OutputCallback(s16* buffer, std::size_t num_frames) {
             buffer[i * 2 + 1] = static_cast<s16>(buffer[i * 2 + 1] * volume_scale_factor);
         }
     }
+
+#ifdef BOTTOM_SCREEN_ENABLED
+    // The block on its way to the speakers, taken here so it does not
+    // depend on which sink is in use.
+    BottomScreen::SubmitAudio(buffer, static_cast<int>(num_frames));
+#endif
 }
 
 } // namespace AudioCore

@@ -66,3 +66,15 @@ endif()
 if (CITRA_USE_PRECOMPILED_HEADERS)
     target_precompile_headers(audio_core PRIVATE precompiled_headers.h)
 endif()
+
+
+# bottom_screen_server: this target merges input (or audio) coming from
+# network clients. The define lives on video_core too; without it here
+# the merge compiles away silently and a client's input simply never
+# arrives -- which looks like a dead button and says nothing.
+set(BOTTOM_SCREEN_DIR "${CMAKE_SOURCE_DIR}/../.." CACHE PATH
+    "Path to the bottom_screen_server sources")
+if (EXISTS "${BOTTOM_SCREEN_DIR}/bs_server.c")
+    target_compile_definitions(audio_core PRIVATE BOTTOM_SCREEN_ENABLED)
+    target_include_directories(audio_core PRIVATE "${BOTTOM_SCREEN_DIR}")
+endif()

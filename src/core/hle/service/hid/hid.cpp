@@ -25,6 +25,10 @@
 #include "core/hle/service/service.h"
 #include "core/movie.h"
 
+#ifdef BOTTOM_SCREEN_ENABLED
+#include "video_core/renderer_opengl/bottom_screen_bridge.h"
+#endif
+
 SERVICE_CONSTRUCT_IMPL(Service::HID::Module)
 SERIALIZE_EXPORT_IMPL(Service::HID::Module)
 
@@ -202,24 +206,83 @@ void Module::UpdatePadCallback(std::uintptr_t user_data, s64 cycles_late) {
 
         system.Movie().HandleTouchStatus(touch_entry);
     } else {
-        state.a.Assign(buttons[A - BUTTON_HID_BEGIN]->GetStatus());
-        state.b.Assign(buttons[B - BUTTON_HID_BEGIN]->GetStatus());
-        state.x.Assign(buttons[X - BUTTON_HID_BEGIN]->GetStatus());
-        state.y.Assign(buttons[Y - BUTTON_HID_BEGIN]->GetStatus());
-        state.right.Assign(buttons[Right - BUTTON_HID_BEGIN]->GetStatus());
-        state.left.Assign(buttons[Left - BUTTON_HID_BEGIN]->GetStatus());
-        state.up.Assign(buttons[Up - BUTTON_HID_BEGIN]->GetStatus());
-        state.down.Assign(buttons[Down - BUTTON_HID_BEGIN]->GetStatus());
-        state.l.Assign(buttons[L - BUTTON_HID_BEGIN]->GetStatus());
-        state.r.Assign(buttons[R - BUTTON_HID_BEGIN]->GetStatus());
-        state.start.Assign(buttons[Start - BUTTON_HID_BEGIN]->GetStatus());
-        state.select.Assign(buttons[Select - BUTTON_HID_BEGIN]->GetStatus());
+        state.a.Assign(buttons[A - BUTTON_HID_BEGIN]->GetStatus()
+#ifdef BOTTOM_SCREEN_ENABLED
+                           || BottomScreen::IsButtonHeld(A)
+#endif
+        );
+        state.b.Assign(buttons[B - BUTTON_HID_BEGIN]->GetStatus()
+#ifdef BOTTOM_SCREEN_ENABLED
+                           || BottomScreen::IsButtonHeld(B)
+#endif
+        );
+        state.x.Assign(buttons[X - BUTTON_HID_BEGIN]->GetStatus()
+#ifdef BOTTOM_SCREEN_ENABLED
+                           || BottomScreen::IsButtonHeld(X)
+#endif
+        );
+        state.y.Assign(buttons[Y - BUTTON_HID_BEGIN]->GetStatus()
+#ifdef BOTTOM_SCREEN_ENABLED
+                           || BottomScreen::IsButtonHeld(Y)
+#endif
+        );
+        state.right.Assign(buttons[Right - BUTTON_HID_BEGIN]->GetStatus()
+#ifdef BOTTOM_SCREEN_ENABLED
+                           || BottomScreen::IsButtonHeld(Right)
+#endif
+        );
+        state.left.Assign(buttons[Left - BUTTON_HID_BEGIN]->GetStatus()
+#ifdef BOTTOM_SCREEN_ENABLED
+                           || BottomScreen::IsButtonHeld(Left)
+#endif
+        );
+        state.up.Assign(buttons[Up - BUTTON_HID_BEGIN]->GetStatus()
+#ifdef BOTTOM_SCREEN_ENABLED
+                           || BottomScreen::IsButtonHeld(Up)
+#endif
+        );
+        state.down.Assign(buttons[Down - BUTTON_HID_BEGIN]->GetStatus()
+#ifdef BOTTOM_SCREEN_ENABLED
+                           || BottomScreen::IsButtonHeld(Down)
+#endif
+        );
+        state.l.Assign(buttons[L - BUTTON_HID_BEGIN]->GetStatus()
+#ifdef BOTTOM_SCREEN_ENABLED
+                           || BottomScreen::IsButtonHeld(L)
+#endif
+        );
+        state.r.Assign(buttons[R - BUTTON_HID_BEGIN]->GetStatus()
+#ifdef BOTTOM_SCREEN_ENABLED
+                           || BottomScreen::IsButtonHeld(R)
+#endif
+        );
+        state.start.Assign(buttons[Start - BUTTON_HID_BEGIN]->GetStatus()
+#ifdef BOTTOM_SCREEN_ENABLED
+                           || BottomScreen::IsButtonHeld(Start)
+#endif
+        );
+        state.select.Assign(buttons[Select - BUTTON_HID_BEGIN]->GetStatus()
+#ifdef BOTTOM_SCREEN_ENABLED
+                           || BottomScreen::IsButtonHeld(Select)
+#endif
+        );
         state.debug.Assign(buttons[Debug - BUTTON_HID_BEGIN]->GetStatus());
         state.gpio14.Assign(buttons[Gpio14 - BUTTON_HID_BEGIN]->GetStatus());
 
         // Get current circle pad position and update circle pad direction
         float circle_pad_x_f, circle_pad_y_f;
         std::tie(circle_pad_x_f, circle_pad_y_f) = circle_pad->GetStatus();
+#ifdef BOTTOM_SCREEN_ENABLED
+        // Merged, not replaced: a pad on the host keeps the stick while
+        // a client leaves theirs centred.
+        {
+            float bs_x, bs_y;
+            if (BottomScreen::GetCirclePad(bs_x, bs_y)) {
+                circle_pad_x_f = bs_x;
+                circle_pad_y_f = bs_y;
+            }
+        }
+#endif
 
         // xperia64: 0x9A seems to be the calibrated limit of the circle pad
         // Verified by using Input Redirector with very large-value digital inputs

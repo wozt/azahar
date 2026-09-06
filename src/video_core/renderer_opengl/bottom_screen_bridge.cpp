@@ -1,4 +1,5 @@
 #include "video_core/renderer_opengl/bottom_screen_bridge.h"
+#include "video_core/renderer_opengl/gl_resource_manager.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -27,6 +28,9 @@ namespace {
     std::vector<std::uint8_t> g_pixels;
     std::vector<std::uint8_t> g_rotated;
     bool      g_touching = false;
+    std::uint32_t g_held = 0;      /* bit per Settings::NativeButton */
+    float     g_pad_x = 0.0f;
+    float     g_pad_y = 0.0f;
 
 
     /*
@@ -80,7 +84,7 @@ void Start() {
      * rate is not measured here. Sound is not wired yet: rate 0 tells
      * the client to draw no volume control rather than a dead one. */
     g_source = bs_mailbox_create(BS_CONSOLE_3DS, g_width, g_height, 60,
-                                 BS_PIXFMT_RGBA, 0, 0);
+                                 BS_PIXFMT_RGBA, 32728, 2);
     if (!g_source) {
         std::fprintf(stderr, "bottom_screen: cannot create the frame mailbox\n");
         return;
@@ -118,7 +122,7 @@ bool IsRunning() {
     return g_server != nullptr;
 }
 
-void SubmitBottomScreen(GLuint texture, int width, int height) {
+void SubmitBottomScreen(BsTextureHandle texture, int width, int height) {
     if (texture == 0)
         return;
 
@@ -219,8 +223,12 @@ void ApplyInput(Frontend::EmuWindow& window, const Layout::FramebufferLayout& la
         if (!g_touching) {
             window.TouchPressed(x, y);
             g_touching = true;
-            std::fprintf(stderr, "bottom_screen: first touch from a client at %d,%d\n",
-                         in.touch_x, in.touch_y);
+            static bool announced = false;
+            if (!announced) {
+                announced = true;
+                std::fprintf(stderr, "bottom_screen: first touch from a client at %d,%d\n",
+                             in.touch_x, in.touch_y);
+            }
         } else {
             window.TouchMoved(x, y);
         }
@@ -229,7 +237,56 @@ void ApplyInput(Frontend::EmuWindow& window, const Layout::FramebufferLayout& la
         g_touching = false;
     }
 
-    (void)PadBit;   // buttons are wired in the next step
+    std::uint32_t held = 0;
+    for (int b = 1; b <= 15; b++) {
+        if (!(in.buttons & (1u << (b - 1))))
+            continue;
+        const int bit = PadBit(b);
+        if (bit >= 0 && bit < 32)
+            held |= (1u << bit);
+    }
+    g_held = held;
+
+    /* The circle pad, as a fraction of full deflection. */
+    g_pad_x = static_cast<float>(in.axis[BS_AXIS_LEFT_X - 1]) / 32767.0f;
+    g_pad_y = static_cast<float>(in.axis[BS_AXIS_LEFT_Y - 1]) / 32767.0f;
+}
+
+bool IsButtonHeld(int nativeButton) {
+    if (!g_server || nativeButton < 0 || nativeButton >= 32)
+        return false;
+    const bool held = (g_held & (1u << nativeButton)) != 0;
+
+    static bool announced = false;
+    if (held && !announced) {
+        announced = true;
+        std::fprintf(stderr, "bottom_screen: first button from a client (id %d)\n",
+                     nativeButton);
+    }
+    return held;
+}
+
+bool GetCirclePad(float& x, float& y) {
+    if (!g_server)
+        return false;
+    if (g_pad_x == 0.0f && g_pad_y == 0.0f)
+        return false;   // centred: leave the stick to the local mapping
+    x = g_pad_x;
+    y = g_pad_y;
+
+    static bool announced = false;
+    if (!announced) {
+        announced = true;
+        std::fprintf(stderr, "bottom_screen: first circle pad from a client at %.2f,%.2f\n",
+                     x, y);
+    }
+    return true;
+}
+
+void SubmitAudio(const short* samples, int frames) {
+    if (!g_server || !samples || frames <= 0)
+        return;
+    bs_mailbox_submit_audio(g_source, samples, frames);
 }
 
 }

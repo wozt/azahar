@@ -1,7 +1,11 @@
 #pragma once
 
 #include <cstdint>
-#include "video_core/renderer_opengl/gl_resource_manager.h"
+
+/* GLuint, spelled out rather than included: this header is also pulled
+ * in by the audio and input code, which has no business dragging in an
+ * OpenGL loader to learn what an unsigned int is. */
+using BsTextureHandle = unsigned int;
 
 namespace Frontend {
 class EmuWindow;
@@ -41,7 +45,7 @@ bool IsRunning();
  * The 3DS bottom screen is 320x240; a resolution scale makes the texture
  * larger and the stream simply arrives sharper.
  */
-void SubmitBottomScreen(GLuint texture, int width, int height);
+void SubmitBottomScreen(BsTextureHandle texture, int width, int height);
 
 /*
  * Pushes what clients have sent into the window, once per frame from the
@@ -52,5 +56,24 @@ void SubmitBottomScreen(GLuint texture, int width, int height);
  * would land every tap in the wrong place.
  */
 void ApplyInput(Frontend::EmuWindow& window, const Layout::FramebufferLayout& layout);
+
+/*
+ * True while a client holds the given Settings::NativeButton. Merged
+ * with the local mapping rather than replacing it, so a pad or keyboard
+ * on the host keeps working while someone plays from a phone.
+ */
+bool IsButtonHeld(int nativeButton);
+
+/*
+ * The circle pad a client is pushing, -1..1 with y positive upwards.
+ * False when it is left centred, so the local mapping keeps the stick.
+ */
+bool GetCirclePad(float& x, float& y);
+
+/*
+ * Sound as the DSP produces it: interleaved stereo PCM16 at the 3DS's
+ * own 32728 Hz, which is resampled on the way into Opus.
+ */
+void SubmitAudio(const short* samples, int frames);
 
 }
