@@ -150,7 +150,9 @@ if (ENABLE_OPENGL)
         renderer_opengl/pica_to_gl.h
         renderer_opengl/post_processing_opengl.cpp
         renderer_opengl/post_processing_opengl.h
-        renderer_opengl/renderer_opengl.cpp
+        renderer_opengl/bottom_screen_bridge.cpp
+    renderer_opengl/bottom_screen_bridge.h
+    renderer_opengl/renderer_opengl.cpp
         renderer_opengl/renderer_opengl.h
     )
     target_link_libraries(video_core PRIVATE glad)
@@ -227,4 +229,53 @@ endif()
 
 if (CITRA_USE_PRECOMPILED_HEADERS)
     target_precompile_headers(video_core PRIVATE precompiled_headers.h)
+endif()
+
+
+# --- bottom_screen_server -------------------------------------------
+#
+# Streams the bottom screen to a phone or a Switch homebrew. The shared
+# code is plain C and lives outside this repository; only
+# bottom_screen_bridge.cpp is part of Azahar.
+#
+# The C goes into a library of its own rather than straight into
+# video_core: that target carries C++-only warning flags and -Werror, so
+# a C file compiled with them fails on the flag rather than on anything
+# in the file. A separate target keeps each language's flags to itself.
+#
+# Optional: without the sibling directory the fork builds exactly like
+# upstream, so a bisect or a clean checkout is never blocked on it.
+
+set(BOTTOM_SCREEN_DIR "${CMAKE_SOURCE_DIR}/../.." CACHE PATH
+    "Path to the bottom_screen_server sources")
+
+if (EXISTS "${BOTTOM_SCREEN_DIR}/bs_server.c")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(BOTTOMSCREEN_FFMPEG REQUIRED libavcodec libavutil libswscale)
+
+    add_library(bottom_screen_c STATIC
+        "${BOTTOM_SCREEN_DIR}/bs_server.c"
+        "${BOTTOM_SCREEN_DIR}/bs_encoder.c"
+        "${BOTTOM_SCREEN_DIR}/bs_audio.c"
+        "${BOTTOM_SCREEN_DIR}/bs_net.c"
+        "${BOTTOM_SCREEN_DIR}/bs_mailbox.c"
+    )
+    # The directory adds C++-only warning flags to everything in it, and
+    # -Werror turns "this flag is not valid for C" into a failure. The
+    # flags cannot be removed from here, so the promotion to error is
+    # lifted for this target alone; the C is built with -Wall -Wextra
+    # clean on its own terms.
+    target_compile_options(bottom_screen_c PRIVATE -Wno-error)
+
+    target_include_directories(bottom_screen_c PUBLIC
+        "${BOTTOM_SCREEN_DIR}" ${BOTTOMSCREEN_FFMPEG_INCLUDE_DIRS})
+    target_link_libraries(bottom_screen_c PUBLIC
+        ${BOTTOMSCREEN_FFMPEG_LIBRARIES} pthread m)
+
+    target_link_libraries(video_core PRIVATE bottom_screen_c)
+    target_compile_definitions(video_core PRIVATE BOTTOM_SCREEN_ENABLED)
+
+    message(STATUS "bottom_screen_server: enabled for Azahar (${BOTTOM_SCREEN_DIR})")
+else()
+    message(STATUS "bottom_screen_server: not found, building Azahar without it")
 endif()

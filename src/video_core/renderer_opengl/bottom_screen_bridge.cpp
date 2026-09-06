@@ -1,0 +1,183 @@
+#include "video_core/renderer_opengl/bottom_screen_bridge.h"
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <vector>
+
+#include "common/settings.h"
+#include "core/frontend/emu_window.h"
+#include "core/frontend/framebuffer_layout.h"
+
+extern "C" {
+#include "bs_mailbox.h"
+#include "bs_protocol.h"
+#include "bs_server.h"
+#include "bs_source.h"
+}
+
+namespace BottomScreen {
+
+namespace {
+    BsSource* g_source = nullptr;
+    BsServer* g_server = nullptr;
+    bool      g_tried  = false;
+    int       g_width  = 0;
+    int       g_height = 0;
+    std::vector<std::uint8_t> g_pixels;
+    bool      g_touching = false;
+
+    /*
+     * BsButton -> the 3DS pad bit. The console has no ZL/ZR on an Old
+     * 3DS and no HOME the emulator exposes here, so those map to
+     * nothing and are dropped rather than treated as an error -- a
+     * shared protocol means clients will send them.
+     */
+    int PadBit(int bsButton) {
+        using namespace Settings;
+        switch (bsButton) {
+        case BS_BTN_A:      return static_cast<int>(NativeButton::A);
+        case BS_BTN_B:      return static_cast<int>(NativeButton::B);
+        case BS_BTN_X:      return static_cast<int>(NativeButton::X);
+        case BS_BTN_Y:      return static_cast<int>(NativeButton::Y);
+        case BS_BTN_L:      return static_cast<int>(NativeButton::L);
+        case BS_BTN_R:      return static_cast<int>(NativeButton::R);
+        case BS_BTN_ZL:     return static_cast<int>(NativeButton::ZL);
+        case BS_BTN_ZR:     return static_cast<int>(NativeButton::ZR);
+        case BS_BTN_START:  return static_cast<int>(NativeButton::Start);
+        case BS_BTN_SELECT: return static_cast<int>(NativeButton::Select);
+        case BS_BTN_UP:     return static_cast<int>(NativeButton::Up);
+        case BS_BTN_DOWN:   return static_cast<int>(NativeButton::Down);
+        case BS_BTN_LEFT:   return static_cast<int>(NativeButton::Left);
+        case BS_BTN_RIGHT:  return static_cast<int>(NativeButton::Right);
+        default:            return -1;
+        }
+    }
+}
+
+void Start() {
+    if (g_tried)
+        return;
+    g_tried = true;
+
+    if (const char* off = std::getenv("BOTTOM_SCREEN"); off && !std::strcmp(off, "0"))
+        return;
+    if (g_width <= 0 || g_height <= 0) {
+        g_tried = false;   // nothing measured yet; wait for a frame
+        return;
+    }
+
+    int port = BS_DEFAULT_PORT;
+    if (const char* p = std::getenv("BOTTOM_SCREEN_PORT")) {
+        const int v = std::atoi(p);
+        if (v > 0 && v < 65536)
+            port = v;
+    }
+
+    /* The 3DS runs at 60 Hz and, unlike the Wii U, does not vary, so the
+     * rate is not measured here. Sound is not wired yet: rate 0 tells
+     * the client to draw no volume control rather than a dead one. */
+    g_source = bs_mailbox_create(BS_CONSOLE_3DS, g_width, g_height, 60,
+                                 BS_PIXFMT_RGBA, 0, 0);
+    if (!g_source) {
+        std::fprintf(stderr, "bottom_screen: cannot create the frame mailbox\n");
+        return;
+    }
+
+    BsServerConfig cfg;
+    std::memset(&cfg, 0, sizeof(cfg));
+    cfg.port = static_cast<std::uint16_t>(port);
+
+    char err[256] = "";
+    g_server = bs_server_create(g_source, &cfg, err, sizeof(err));
+    if (!g_server) {
+        std::fprintf(stderr, "bottom_screen: %s\n", err);
+        g_source->destroy(g_source->self);
+        std::free(g_source);
+        g_source = nullptr;
+    }
+}
+
+void Stop() {
+    if (g_server) {
+        bs_server_destroy(g_server);
+        g_server = nullptr;
+    }
+    if (g_source) {
+        g_source->destroy(g_source->self);
+        std::free(g_source);
+        g_source = nullptr;
+    }
+    g_tried = false;
+    g_width = g_height = 0;
+}
+
+bool IsRunning() {
+    return g_server != nullptr;
+}
+
+void SubmitBottomScreen(GLuint texture, int width, int height) {
+    if (texture == 0 || width <= 0 || height <= 0)
+        return;
+
+    /* A resolution scale changes the texture size mid-run. The stream's
+     * size is fixed at the handshake, so that means a new server rather
+     * than a silently mismatched picture. */
+    if (g_server && (width != g_width || height != g_height))
+        Stop();
+
+    if (!g_server) {
+        g_width = width;
+        g_height = height;
+        Start();
+        if (!g_server)
+            return;
+    }
+
+    g_pixels.resize(static_cast<std::size_t>(width) * height * 4);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, g_pixels.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    bs_mailbox_submit(g_source, g_pixels.data(), width * 4);
+}
+
+void ApplyInput(Frontend::EmuWindow& window, const Layout::FramebufferLayout& layout) {
+    if (!g_server)
+        return;
+
+    BsInputState in;
+    bs_mailbox_input(g_source, &in);
+
+    /*
+     * TouchPressed takes window coordinates and works out which screen
+     * they fall on, so console pixels are mapped through the layout's
+     * own bottom_screen rectangle. Passing them straight in would put
+     * every tap in the wrong place, and further out the larger the
+     * window.
+     */
+    if (in.touching) {
+        const auto& r = layout.bottom_screen;
+        const float fx = static_cast<float>(in.touch_x) / BS_3DS_WIDTH;
+        const float fy = static_cast<float>(in.touch_y) / BS_3DS_HEIGHT;
+        const unsigned x = r.left + static_cast<unsigned>(fx * r.GetWidth());
+        const unsigned y = r.top + static_cast<unsigned>(fy * r.GetHeight());
+
+        if (!g_touching) {
+            window.TouchPressed(x, y);
+            g_touching = true;
+            std::fprintf(stderr, "bottom_screen: first touch from a client at %d,%d\n",
+                         in.touch_x, in.touch_y);
+        } else {
+            window.TouchMoved(x, y);
+        }
+    } else if (g_touching) {
+        window.TouchReleased();
+        g_touching = false;
+    }
+
+    (void)PadBit;   // buttons are wired in the next step
+}
+
+}

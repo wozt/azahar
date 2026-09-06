@@ -14,6 +14,10 @@
 #include "video_core/renderer_opengl/gl_texture_mailbox.h"
 #include "video_core/renderer_opengl/post_processing_opengl.h"
 #include "video_core/renderer_opengl/renderer_opengl.h"
+
+#ifdef BOTTOM_SCREEN_ENABLED
+#include "video_core/renderer_opengl/bottom_screen_bridge.h"
+#endif
 #include "video_core/shader/generator/glsl_shader_gen.h"
 
 #include "video_core/host_shaders/opengl_present_anaglyph_frag.h"
@@ -208,6 +212,16 @@ void RendererOpenGL::PrepareRendertarget() {
         }
         LoadFBToScreenInfo(framebuffer, screen_infos[i], i == 1, color_fill);
     }
+
+#ifdef BOTTOM_SCREEN_ENABLED
+    // screen_infos[2] is the bottom screen: fb_id 1, the one
+    // color_fill_bottom applies to. Taken here, where it has just been
+    // loaded and is still bound to nothing else.
+    BottomScreen::SubmitBottomScreen(screen_infos[2].display_texture,
+                                     screen_infos[2].texture.width,
+                                     screen_infos[2].texture.height);
+    BottomScreen::ApplyInput(render_window, render_window.GetFramebufferLayout());
+#endif
 }
 
 void RendererOpenGL::RenderToMailbox(const Layout::FramebufferLayout& layout,
