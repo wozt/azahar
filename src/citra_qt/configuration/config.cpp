@@ -482,6 +482,8 @@ void QtConfig::ReadCoreValues() {
     ReadGlobalSetting(Settings::values.cpu_clock_percentage);
 
     if (global) {
+        ReadBasicSetting(Settings::values.bottom_screen_enabled);
+        ReadBasicSetting(Settings::values.bottom_screen_port);
         ReadBasicSetting(Settings::values.use_cpu_jit);
         ReadBasicSetting(Settings::values.delay_start_for_lle_modules);
     }
@@ -1079,6 +1081,8 @@ void QtConfig::SaveCoreValues() {
     WriteGlobalSetting(Settings::values.cpu_clock_percentage);
 
     if (global) {
+        WriteBasicSetting(Settings::values.bottom_screen_enabled);
+        WriteBasicSetting(Settings::values.bottom_screen_port);
         WriteBasicSetting(Settings::values.use_cpu_jit);
         WriteBasicSetting(Settings::values.delay_start_for_lle_modules);
     }

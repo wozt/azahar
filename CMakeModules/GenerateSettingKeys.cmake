@@ -6,6 +6,8 @@
 
 # Shared setting keys (multi-platform)
 foreach(KEY IN ITEMS
+    "bottom_screen_enabled"
+    "bottom_screen_port"
     "use_artic_base_controller"
     "enable_gamemode"
     "use_cpu_jit"

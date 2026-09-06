@@ -478,6 +478,15 @@ struct Values {
     int current_input_profile_index;          ///< The current input profile index
     std::vector<InputProfile> input_profiles; ///< The list of input profiles
     std::vector<TouchFromButtonMap> touch_from_button_maps;
+    // bottom_screen_server: streams the bottom screen to a phone or a
+    // Switch homebrew. On by default -- it costs nothing until a client
+    // connects, and a feature nobody can find is a feature nobody uses.
+    // The port is a first choice: if it is taken the server walks
+    // upwards until it finds a free one, so several emulators can run
+    // at once.
+    Setting<bool> bottom_screen_enabled{true, Keys::bottom_screen_enabled};
+    Setting<u16> bottom_screen_port{5090, Keys::bottom_screen_port};
+
     Setting<bool> use_artic_base_controller{false, Keys::use_artic_base_controller};
 
     SwitchableSetting<bool> enable_gamemode{true, Keys::enable_gamemode};

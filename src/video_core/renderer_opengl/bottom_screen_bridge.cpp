@@ -66,19 +66,26 @@ void Start() {
         return;
     g_tried = true;
 
+    /* The variable wins over the setting: a scripted launch should be
+     * able to turn this off without editing a config file somebody else
+     * owns. Without one, the setting decides. */
     if (const char* off = std::getenv("BOTTOM_SCREEN"); off && !std::strcmp(off, "0"))
+        return;
+    if (!Settings::values.bottom_screen_enabled.GetValue())
         return;
     if (g_width <= 0 || g_height <= 0) {
         g_tried = false;   // nothing measured yet; wait for a frame
         return;
     }
 
-    int port = BS_DEFAULT_PORT;
+    int port = Settings::values.bottom_screen_port.GetValue();
     if (const char* p = std::getenv("BOTTOM_SCREEN_PORT")) {
         const int v = std::atoi(p);
         if (v > 0 && v < 65536)
             port = v;
     }
+    if (port <= 0 || port > 65535)
+        port = BS_DEFAULT_PORT;
 
     /* The 3DS runs at 60 Hz and, unlike the Wii U, does not vary, so the
      * rate is not measured here. Sound is not wired yet: rate 0 tells

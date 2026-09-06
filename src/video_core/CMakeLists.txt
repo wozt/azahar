@@ -251,7 +251,7 @@ set(BOTTOM_SCREEN_DIR "${CMAKE_SOURCE_DIR}/../.." CACHE PATH
 
 if (EXISTS "${BOTTOM_SCREEN_DIR}/bs_server.c")
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(BOTTOMSCREEN_FFMPEG REQUIRED libavcodec libavutil libswscale)
+    pkg_check_modules(BOTTOMSCREEN_FFMPEG REQUIRED libavcodec libavutil libswscale libswresample)
 
     add_library(bottom_screen_c STATIC
         "${BOTTOM_SCREEN_DIR}/bs_server.c"
