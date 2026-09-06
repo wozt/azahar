@@ -25,6 +25,7 @@ namespace {
     int       g_width  = 0;
     int       g_height = 0;
     std::vector<std::uint8_t> g_pixels;
+    std::vector<std::uint8_t> g_rotated;
     bool      g_touching = false;
 
     /*
@@ -117,30 +118,67 @@ bool IsRunning() {
 }
 
 void SubmitBottomScreen(GLuint texture, int width, int height) {
-    if (texture == 0 || width <= 0 || height <= 0)
+    if (texture == 0)
         return;
+
+    /*
+     * Ask the texture its own size rather than trusting the width and
+     * height beside it in ScreenInfo. Those describe the framebuffer the
+     * console produced; the GL texture is allocated separately and need
+     * not match. Sizing the readback from the wrong one writes past the
+     * buffer, which is a heap corruption that shows up as a segfault
+     * somewhere else entirely.
+     */
+    glBindTexture(GL_TEXTURE_2D, texture);
+    GLint tw = 0, th = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
+    if (tw <= 0 || th <= 0) {
+        glBindTexture(GL_TEXTURE_2D, 0);
+        return;
+    }
+    width = tw;
+    height = th;
 
     /* A resolution scale changes the texture size mid-run. The stream's
      * size is fixed at the handshake, so that means a new server rather
      * than a silently mismatched picture. */
-    if (g_server && (width != g_width || height != g_height))
+    // Announced after rotation: the stream is landscape even though the
+    // texture is not.
+    if (g_server && (height != g_width || width != g_height))
         Stop();
 
     if (!g_server) {
-        g_width = width;
-        g_height = height;
+        g_width = height;
+        g_height = width;
         Start();
         if (!g_server)
             return;
     }
 
     g_pixels.resize(static_cast<std::size_t>(width) * height * 4);
-    glBindTexture(GL_TEXTURE_2D, texture);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, g_pixels.data());
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    bs_mailbox_submit(g_source, g_pixels.data(), width * 4);
+    /*
+     * The 3DS stores its screens in portrait, the way the panels are
+     * physically mounted, so the texture arrives 240 wide by 320 tall
+     * for a screen that is 320 by 240. Rotating here rather than asking
+     * every client to do it keeps the rotation in the one place that
+     * knows why it exists.
+     */
+    g_rotated.resize(g_pixels.size());
+    for (int y = 0; y < height; y++) {
+        const std::uint8_t* src = g_pixels.data() + static_cast<std::size_t>(y) * width * 4;
+        for (int x = 0; x < width; x++) {
+            // (x, y) in the portrait texture becomes (y, width-1-x).
+            const std::size_t dst = ((static_cast<std::size_t>(width - 1 - x) * height) + y) * 4;
+            std::memcpy(&g_rotated[dst], src + static_cast<std::size_t>(x) * 4, 4);
+        }
+    }
+
+    bs_mailbox_submit(g_source, g_rotated.data(), height * 4);
 }
 
 void ApplyInput(Frontend::EmuWindow& window, const Layout::FramebufferLayout& layout) {
