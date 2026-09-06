@@ -799,6 +799,8 @@ bool RasterizerVulkan::AccelerateDisplay(const Pica::FramebufferConfig& config,
         (float)src_rect.top / (float)scaled_height, (float)src_rect.right / (float)scaled_width);
 
     screen_info.image_view = src_surface.ImageView();
+    screen_info.display_image = src_surface.Image();
+    screen_info.display_rect = src_rect;
 
     return true;
 }

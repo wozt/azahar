@@ -150,8 +150,8 @@ if (ENABLE_OPENGL)
         renderer_opengl/pica_to_gl.h
         renderer_opengl/post_processing_opengl.cpp
         renderer_opengl/post_processing_opengl.h
-        renderer_opengl/bottom_screen_bridge.cpp
-    renderer_opengl/bottom_screen_bridge.h
+        bottom_screen_bridge.cpp
+    bottom_screen_bridge.h
     renderer_opengl/renderer_opengl.cpp
         renderer_opengl/renderer_opengl.h
     )

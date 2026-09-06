@@ -52,6 +52,18 @@ struct ScreenInfo {
     TextureInfo texture;
     Common::Rectangle<f32> texcoords;
     vk::ImageView image_view;
+
+    /*
+     * The same picture as image_view, as an image and a region.
+     *
+     * A view cannot be copied out of, and when the rasterizer accelerates
+     * the display the view belongs to one of its surfaces rather than to
+     * the texture beside it -- so neither the image nor the size can be
+     * inferred from the rest of this struct. bottom_screen_server needs
+     * both; nothing else reads them.
+     */
+    vk::Image display_image;
+    Common::Rectangle<u32> display_rect;
 };
 
 struct PresentUniformData {
@@ -92,6 +104,9 @@ private:
                                      const Pica::FramebufferConfig& framebuffer);
     void ConfigureRenderPipeline();
     void PrepareRendertarget();
+#ifdef BOTTOM_SCREEN_ENABLED
+    void SubmitBottomScreenToBridge();
+#endif
     void RenderScreenshot();
     void RenderScreenshotWithStagingCopy();
     bool TryRenderScreenshotWithHostMemory();

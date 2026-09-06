@@ -26,7 +26,7 @@
 #include "core/movie.h"
 
 #ifdef BOTTOM_SCREEN_ENABLED
-#include "video_core/renderer_opengl/bottom_screen_bridge.h"
+#include "video_core/bottom_screen_bridge.h"
 #endif
 
 SERVICE_CONSTRUCT_IMPL(Service::HID::Module)

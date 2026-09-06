@@ -23,13 +23,18 @@ struct FramebufferLayout;
  *
  * Two hooks, both in code that already runs every frame:
  *
- *   video  after PrepareRendertarget, where screen_infos[2] holds the
- *          bottom screen -- fb_id 1, the one color_fill_bottom applies
- *          to. Read back the way Azahar's own frame dumper does it.
+ *   video  after each renderer has loaded its screens, where
+ *          screen_infos[2] holds the bottom one -- fb_id 1, the one
+ *          color_fill_bottom applies to.
  *
  *   input  EmuWindow's TouchPressed/TouchMoved/TouchReleased, the same
  *          calls the mouse makes, so the emulated console cannot tell
  *          the difference.
+ *
+ * Azahar has three renderers and the bridge belongs to none of them,
+ * which is why it sits here rather than under renderer_opengl. Each one
+ * gets the bottom screen into ordinary RGBA its own way and hands it
+ * over; everything after that is shared.
  */
 
 namespace BottomScreen {
@@ -41,11 +46,25 @@ void Stop();
 bool IsRunning();
 
 /*
- * Reads the bottom screen back off the GPU and hands it to the server.
+ * The OpenGL renderer's way in: the bottom screen is a GL texture, so
+ * the readback happens here where the GL loader is already present.
+ *
  * The 3DS bottom screen is 320x240; a resolution scale makes the texture
  * larger and the stream simply arrives sharper.
  */
-void SubmitBottomScreen(BsTextureHandle texture, int width, int height);
+void SubmitBottomScreenGL(BsTextureHandle texture);
+
+/*
+ * The way in for everybody else: plain RGBA the caller already holds.
+ * The software renderer decodes the framebuffer into exactly this, and
+ * the Vulkan renderer copies its image into a staging buffer to get it.
+ *
+ * rotate is for callers whose pixels are still in the console's own
+ * portrait orientation -- the panels are physically mounted sideways, so
+ * a 320x240 screen arrives 240 wide by 320 tall. The software renderer
+ * transposes as it decodes and passes false; the other two pass true.
+ */
+void SubmitBottomScreenRGBA(const void* rgba, int width, int height, bool rotate);
 
 /*
  * Pushes what clients have sent into the window, once per frame from the

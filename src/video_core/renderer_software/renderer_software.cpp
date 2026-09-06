@@ -7,6 +7,10 @@
 #include "video_core/gpu.h"
 #include "video_core/pica/pica_core.h"
 #include "video_core/renderer_software/renderer_software.h"
+#ifdef BOTTOM_SCREEN_ENABLED
+#include "core/frontend/emu_window.h"
+#include "video_core/bottom_screen_bridge.h"
+#endif
 
 namespace SwRenderer {
 
@@ -32,6 +36,22 @@ void RendererSoftware::PrepareRenderTarget() {
         const auto color_fill = fb_id == 0 ? regs_lcd.color_fill_top : regs_lcd.color_fill_bottom;
         LoadFBToScreenInfo(i, color_fill);
     }
+
+#ifdef BOTTOM_SCREEN_ENABLED
+    /*
+     * screen_infos[2] is the bottom screen. This renderer decodes the
+     * console's framebuffer straight into RGBA in RAM, and transposes as
+     * it goes -- the inner loop writes (x * height + y) -- so what comes
+     * out is already landscape and needs no rotation.
+     */
+    const auto& bottom = screen_infos[2];
+    if (!bottom.pixels.empty()) {
+        BottomScreen::SubmitBottomScreenRGBA(bottom.pixels.data(),
+                                             static_cast<int>(bottom.height),
+                                             static_cast<int>(bottom.width), false);
+        BottomScreen::ApplyInput(render_window, render_window.GetFramebufferLayout());
+    }
+#endif
 }
 
 void RendererSoftware::LoadFBToScreenInfo(int i, const Pica::ColorFill& color_fill) {

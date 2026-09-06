@@ -12,7 +12,7 @@
 #include "core/dumping/backend.h"
 
 #ifdef BOTTOM_SCREEN_ENABLED
-#include "video_core/renderer_opengl/bottom_screen_bridge.h"
+#include "video_core/bottom_screen_bridge.h"
 #endif
 
 namespace AudioCore {

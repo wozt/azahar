@@ -12,6 +12,10 @@
 #include "video_core/gpu.h"
 #include "video_core/pica/pica_core.h"
 #include "video_core/renderer_vulkan/renderer_vulkan.h"
+#ifdef BOTTOM_SCREEN_ENABLED
+#include "core/frontend/emu_window.h"
+#include "video_core/bottom_screen_bridge.h"
+#endif
 #include "video_core/renderer_vulkan/vk_memory_util.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
 
@@ -172,6 +176,8 @@ void RendererVulkan::PrepareRendertarget() {
         const auto color_fill = fb_id == 0 ? regs_lcd.color_fill_top : regs_lcd.color_fill_bottom;
         if (color_fill.is_enabled) {
             screen_infos[i].image_view = texture.image_view;
+            screen_infos[i].display_image = texture.image;
+            screen_infos[i].display_rect = {0, texture.height, texture.width, 0};
             FillScreen(color_fill.AsVector(), texture);
             continue;
         }
@@ -181,9 +187,200 @@ void RendererVulkan::PrepareRendertarget() {
             ConfigureFramebufferTexture(texture, framebuffer);
         }
 
+        screen_infos[i].display_image = texture.image;
+        screen_infos[i].display_rect = {0, texture.height, texture.width, 0};
         LoadFBToScreenInfo(framebuffer, screen_infos[i], i == 1);
     }
+
+#ifdef BOTTOM_SCREEN_ENABLED
+    // screen_infos[2] is the bottom screen: fb_id 1, the one
+    // color_fill_bottom applies to.
+    SubmitBottomScreenToBridge();
+#endif
 }
+
+#ifdef BOTTOM_SCREEN_ENABLED
+/*
+ * Copies the bottom screen out of whatever image is currently standing
+ * in for it and hands it to bottom_screen_server.
+ *
+ * The region matters: when the rasterizer accelerates the display, the
+ * image is one of its surfaces and the screen is a rectangle inside it,
+ * so copying the whole thing would stream the wrong picture at the wrong
+ * size.
+ *
+ * This finishes the scheduler, which is a full stall. At 320x240 -- even
+ * scaled several times -- that has not been worth the machinery to avoid
+ * so far; if it ever is, the answer is a ring of staging buffers read a
+ * frame or two late, not a cleverer copy.
+ */
+void RendererVulkan::SubmitBottomScreenToBridge() {
+    const auto& info = screen_infos[2];
+    if (!info.display_image) {
+        return;
+    }
+
+    const s32 width = static_cast<s32>(info.display_rect.GetWidth());
+    const s32 height = static_cast<s32>(info.display_rect.GetHeight());
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+
+    const s32 x0 = static_cast<s32>(std::min(info.display_rect.left, info.display_rect.right));
+    const s32 y0 = static_cast<s32>(std::min(info.display_rect.top, info.display_rect.bottom));
+
+    /*
+     * Blit into an RGBA8 image of our own rather than copying the source
+     * out directly.
+     *
+     * The image standing in for the screen belongs to the rasterizer,
+     * and it carries whatever format the title's framebuffer uses --
+     * RGB565 and RGBA4 among them. Reading one of those as if it were
+     * four bytes a pixel produced a picture repeated twice down the
+     * frame in the wrong colours, which is what a stride mistake looks
+     * like. A blit converts, and costs one pass over 320x240.
+     */
+    const vk::ImageCreateInfo image_info = {
+        .imageType = vk::ImageType::e2D,
+        .format = vk::Format::eR8G8B8A8Unorm,
+        .extent = {static_cast<u32>(width), static_cast<u32>(height), 1},
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = vk::SampleCountFlagBits::e1,
+        .tiling = vk::ImageTiling::eOptimal,
+        .usage = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc,
+        .sharingMode = vk::SharingMode::eExclusive,
+        .initialLayout = vk::ImageLayout::eUndefined,
+    };
+    const VmaAllocationCreateInfo image_alloc = {
+        .flags = VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT,
+        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+    };
+    VkImage unsafe_image{};
+    VmaAllocation image_allocation{};
+    VkImageCreateInfo unsafe_image_info = static_cast<VkImageCreateInfo>(image_info);
+    if (vmaCreateImage(instance.GetAllocator(), &unsafe_image_info, &image_alloc, &unsafe_image,
+                       &image_allocation, nullptr) != VK_SUCCESS) {
+        return;
+    }
+    const vk::Image scratch{unsafe_image};
+
+    const vk::DeviceSize size = static_cast<vk::DeviceSize>(width) * height * 4;
+    const vk::BufferCreateInfo staging_info = {
+        .size = size,
+        .usage = vk::BufferUsageFlagBits::eTransferDst,
+    };
+    const VmaAllocationCreateInfo alloc_create_info = {
+        .flags = VMA_ALLOCATION_CREATE_WITHIN_BUDGET_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT |
+                 VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT,
+        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+    };
+    VkBuffer unsafe_buffer{};
+    VmaAllocation allocation{};
+    VmaAllocationInfo alloc_info;
+    VkBufferCreateInfo unsafe_info = static_cast<VkBufferCreateInfo>(staging_info);
+    if (vmaCreateBuffer(instance.GetAllocator(), &unsafe_info, &alloc_create_info, &unsafe_buffer,
+                        &allocation, &alloc_info) != VK_SUCCESS) {
+        vmaDestroyImage(instance.GetAllocator(), scratch, image_allocation);
+        return;
+    }
+    const vk::Buffer staging{unsafe_buffer};
+
+    renderpass_cache.EndRendering();
+    scheduler.Record([source = info.display_image, scratch, staging, x0, y0, width,
+                      height](vk::CommandBuffer cmdbuf) {
+        const vk::ImageSubresourceRange colour = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        };
+
+        vk::ImageMemoryBarrier source_to_read = {
+            .srcAccessMask = vk::AccessFlagBits::eMemoryWrite,
+            .dstAccessMask = vk::AccessFlagBits::eTransferRead,
+            .oldLayout = vk::ImageLayout::eGeneral,
+            .newLayout = vk::ImageLayout::eTransferSrcOptimal,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = source,
+            .subresourceRange = colour,
+        };
+        vk::ImageMemoryBarrier scratch_to_write = source_to_read;
+        scratch_to_write.srcAccessMask = vk::AccessFlagBits::eTransferRead;
+        scratch_to_write.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+        scratch_to_write.oldLayout = vk::ImageLayout::eUndefined;
+        scratch_to_write.newLayout = vk::ImageLayout::eTransferDstOptimal;
+        scratch_to_write.image = scratch;
+
+        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
+                               vk::PipelineStageFlagBits::eTransfer,
+                               vk::DependencyFlagBits::eByRegion, {}, {},
+                               {source_to_read, scratch_to_write});
+
+        const vk::ImageBlit blit = {
+            .srcSubresource{
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .mipLevel = 0,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+            .srcOffsets = std::array{vk::Offset3D{x0, y0, 0},
+                                     vk::Offset3D{x0 + width, y0 + height, 1}},
+            .dstSubresource{
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .mipLevel = 0,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+            .dstOffsets = std::array{vk::Offset3D{0, 0, 0}, vk::Offset3D{width, height, 1}},
+        };
+        cmdbuf.blitImage(source, vk::ImageLayout::eTransferSrcOptimal, scratch,
+                         vk::ImageLayout::eTransferDstOptimal, blit, vk::Filter::eNearest);
+
+        vk::ImageMemoryBarrier scratch_to_read = scratch_to_write;
+        scratch_to_read.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+        scratch_to_read.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+        scratch_to_read.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+        scratch_to_read.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+
+        vk::ImageMemoryBarrier source_back = source_to_read;
+        source_back.srcAccessMask = vk::AccessFlagBits::eTransferRead;
+        source_back.dstAccessMask =
+            vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite;
+        source_back.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+        source_back.newLayout = vk::ImageLayout::eGeneral;
+
+        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                               vk::PipelineStageFlagBits::eTransfer,
+                               vk::DependencyFlagBits::eByRegion, {}, {},
+                               {scratch_to_read, source_back});
+
+        const vk::BufferImageCopy copy = {
+            .bufferOffset = 0,
+            .bufferRowLength = 0,
+            .bufferImageHeight = 0,
+            .imageSubresource{
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .mipLevel = 0,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+            .imageOffset = {0, 0, 0},
+            .imageExtent = {static_cast<u32>(width), static_cast<u32>(height), 1},
+        };
+        cmdbuf.copyImageToBuffer(scratch, vk::ImageLayout::eTransferSrcOptimal, staging, copy);
+    });
+    scheduler.Finish();
+
+    BottomScreen::SubmitBottomScreenRGBA(alloc_info.pMappedData, width, height, true);
+    BottomScreen::ApplyInput(render_window, render_window.GetFramebufferLayout());
+
+    vmaDestroyBuffer(instance.GetAllocator(), staging, allocation);
+    vmaDestroyImage(instance.GetAllocator(), scratch, image_allocation);
+}
+#endif
 
 void RendererVulkan::PrepareDraw(Frame* frame, const Layout::FramebufferLayout& layout) {
     const auto sampler = present_samplers[!Settings::values.filter_mode.GetValue()];

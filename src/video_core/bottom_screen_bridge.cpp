@@ -1,4 +1,4 @@
-#include "video_core/renderer_opengl/bottom_screen_bridge.h"
+#include "video_core/bottom_screen_bridge.h"
 #include "video_core/renderer_opengl/gl_resource_manager.h"
 
 #include <cstdio>
@@ -129,7 +129,7 @@ bool IsRunning() {
     return g_server != nullptr;
 }
 
-void SubmitBottomScreen(BsTextureHandle texture, int width, int height) {
+void SubmitBottomScreenGL(BsTextureHandle texture) {
     if (texture == 0)
         return;
 
@@ -149,13 +149,23 @@ void SubmitBottomScreen(BsTextureHandle texture, int width, int height) {
         glBindTexture(GL_TEXTURE_2D, 0);
         return;
     }
-    width = tw;
-    height = th;
 
-    // Announced after rotation: the stream is landscape even though the
-    // texture is not.
-    const int out_w = height;
-    const int out_h = width;
+    g_pixels.resize(static_cast<std::size_t>(tw) * th * 4);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, g_pixels.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    SubmitBottomScreenRGBA(g_pixels.data(), tw, th, true);
+}
+
+void SubmitBottomScreenRGBA(const void* rgba, int width, int height, bool rotate) {
+    if (!rgba || width <= 0 || height <= 0)
+        return;
+
+    // Announced after any rotation: the stream is landscape whatever
+    // orientation the renderer happened to hand over.
+    const int out_w = rotate ? height : width;
+    const int out_h = rotate ? width : height;
 
     if (!g_server) {
         g_width = out_w;
@@ -165,10 +175,11 @@ void SubmitBottomScreen(BsTextureHandle texture, int width, int height) {
             return;
     } else if (out_w != g_width || out_h != g_height) {
         /*
-         * The size changed: someone raised the internal resolution, or a
-         * title reconfigured its framebuffer while booting. Either way
-         * the connection survives -- the server renegotiates with
-         * whoever is watching rather than dropping them over a setting.
+         * The size changed: someone raised the internal resolution, a
+         * title reconfigured its framebuffer while booting, or the
+         * renderer itself was swapped. Either way the connection
+         * survives -- the server renegotiates with whoever is watching
+         * rather than dropping them over a setting.
          */
         if (bs_mailbox_resize(g_source, out_w, out_h)) {
             g_width = out_w;
@@ -176,23 +187,24 @@ void SubmitBottomScreen(BsTextureHandle texture, int width, int height) {
         }
     }
 
-    g_pixels.resize(static_cast<std::size_t>(width) * height * 4);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, g_pixels.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
+    if (!rotate) {
+        bs_mailbox_submit(g_source, rgba, width * 4);
+        return;
+    }
 
     /*
      * The 3DS stores its screens in portrait, the way the panels are
-     * physically mounted, so the texture arrives 240 wide by 320 tall
+     * physically mounted, so the picture arrives 240 wide by 320 tall
      * for a screen that is 320 by 240. Rotating here rather than asking
      * every client to do it keeps the rotation in the one place that
      * knows why it exists.
      */
-    g_rotated.resize(g_pixels.size());
+    const std::uint8_t* in = static_cast<const std::uint8_t*>(rgba);
+    g_rotated.resize(static_cast<std::size_t>(width) * height * 4);
     for (int y = 0; y < height; y++) {
-        const std::uint8_t* src = g_pixels.data() + static_cast<std::size_t>(y) * width * 4;
+        const std::uint8_t* src = in + static_cast<std::size_t>(y) * width * 4;
         for (int x = 0; x < width; x++) {
-            // (x, y) in the portrait texture becomes (y, width-1-x).
+            // (x, y) in the portrait picture becomes (y, width-1-x).
             const std::size_t dst = ((static_cast<std::size_t>(width - 1 - x) * height) + y) * 4;
             std::memcpy(&g_rotated[dst], src + static_cast<std::size_t>(x) * 4, 4);
         }
