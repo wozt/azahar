@@ -28,6 +28,7 @@ namespace {
     std::vector<std::uint8_t> g_rotated;
     bool      g_touching = false;
 
+
     /*
      * BsButton -> the 3DS pad bit. The console has no ZL/ZR on an Old
      * 3DS and no HOME the emulator exposes here, so those map to
@@ -140,20 +141,28 @@ void SubmitBottomScreen(GLuint texture, int width, int height) {
     width = tw;
     height = th;
 
-    /* A resolution scale changes the texture size mid-run. The stream's
-     * size is fixed at the handshake, so that means a new server rather
-     * than a silently mismatched picture. */
     // Announced after rotation: the stream is landscape even though the
     // texture is not.
-    if (g_server && (height != g_width || width != g_height))
-        Stop();
+    const int out_w = height;
+    const int out_h = width;
 
     if (!g_server) {
-        g_width = height;
-        g_height = width;
+        g_width = out_w;
+        g_height = out_h;
         Start();
         if (!g_server)
             return;
+    } else if (out_w != g_width || out_h != g_height) {
+        /*
+         * The size changed: someone raised the internal resolution, or a
+         * title reconfigured its framebuffer while booting. Either way
+         * the connection survives -- the server renegotiates with
+         * whoever is watching rather than dropping them over a setting.
+         */
+        if (bs_mailbox_resize(g_source, out_w, out_h)) {
+            g_width = out_w;
+            g_height = out_h;
+        }
     }
 
     g_pixels.resize(static_cast<std::size_t>(width) * height * 4);
@@ -197,8 +206,13 @@ void ApplyInput(Frontend::EmuWindow& window, const Layout::FramebufferLayout& la
      */
     if (in.touching) {
         const auto& r = layout.bottom_screen;
-        const float fx = static_cast<float>(in.touch_x) / BS_3DS_WIDTH;
-        const float fy = static_cast<float>(in.touch_y) / BS_3DS_HEIGHT;
+        /* Against the announced size, not the console's own: clients
+         * work in the coordinate space the handshake gave them, and
+         * that is the scaled one whenever the emulator renders larger.
+         * Dividing by 320 here put every tap six times too close to the
+         * top left. */
+        const float fx = static_cast<float>(in.touch_x) / (g_width > 0 ? g_width : BS_3DS_WIDTH);
+        const float fy = static_cast<float>(in.touch_y) / (g_height > 0 ? g_height : BS_3DS_HEIGHT);
         const unsigned x = r.left + static_cast<unsigned>(fx * r.GetWidth());
         const unsigned y = r.top + static_cast<unsigned>(fy * r.GetHeight());
 
