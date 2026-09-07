@@ -250,23 +250,20 @@ set(BOTTOM_SCREEN_DIR "${CMAKE_SOURCE_DIR}/../.." CACHE PATH
     "Path to the bottom_screen_server sources")
 
 if (EXISTS "${BOTTOM_SCREEN_DIR}/bs_server.c")
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(BOTTOMSCREEN_FFMPEG REQUIRED libavcodec libavutil libswscale libswresample)
+    # The file list lives beside the sources it names, so adding one is
+    # a single edit rather than three that can be forgotten separately.
+    include("${BOTTOM_SCREEN_DIR}/bottom_screen.cmake")
+    bottom_screen_sources(BOTTOM_SCREEN_C)
 
-    add_library(bottom_screen_c STATIC
-        "${BOTTOM_SCREEN_DIR}/bs_server.c"
-        "${BOTTOM_SCREEN_DIR}/bs_encoder.c"
-        "${BOTTOM_SCREEN_DIR}/bs_audio.c"
-        "${BOTTOM_SCREEN_DIR}/bs_net.c"
-        "${BOTTOM_SCREEN_DIR}/bs_mailbox.c"
-    )
+    add_library(bottom_screen_c STATIC ${BOTTOM_SCREEN_C})
+
     # The directory adds C++-only warning flags to everything in it, and
     # -Werror turns "this flag is not valid for C" into a failure. The
     # flags cannot be removed from here, so the promotion to error is
     # lifted for this target alone; the C is built with -Wall -Wextra
     # clean on its own terms.
     target_compile_options(bottom_screen_c PRIVATE -Wno-error)
-
+    bottom_screen_attach(bottom_screen_c)
     target_include_directories(bottom_screen_c PUBLIC
         "${BOTTOM_SCREEN_DIR}" ${BOTTOMSCREEN_FFMPEG_INCLUDE_DIRS})
     target_link_libraries(bottom_screen_c PUBLIC
