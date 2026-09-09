@@ -105,7 +105,9 @@ private:
     void ConfigureRenderPipeline();
     void PrepareRendertarget();
 #ifdef BOTTOM_SCREEN_ENABLED
-    void SubmitBottomScreenToBridge();
+    /* index into screen_infos; top says which of the two streams it
+     * belongs to, and only the bottom one carries input back. */
+    void SubmitScreenToBridge(int index, bool top);
 #endif
     void RenderScreenshot();
     void RenderScreenshotWithStagingCopy();

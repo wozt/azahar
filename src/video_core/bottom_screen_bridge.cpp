@@ -27,6 +27,22 @@ namespace {
     int       g_height = 0;
     std::vector<std::uint8_t> g_pixels;
     std::vector<std::uint8_t> g_rotated;
+
+    /*
+     * The top screen, for a client that asked for it.
+     *
+     * Its own everything, because it is not the same picture: a 3DS top
+     * screen is 400x240 where the touch screen is 320x240, and both are
+     * stored in portrait and rotated here. Built on first use and left
+     * alone afterwards -- the server stops encoding it when the last
+     * viewer leaves, and the renderers skip the readback in that case,
+     * so what remains is two buffers nobody touches.
+     */
+    BsSource* g_top_source = nullptr;
+    int       g_top_width  = 0;
+    int       g_top_height = 0;
+    std::vector<std::uint8_t> g_top_pixels;
+    std::vector<std::uint8_t> g_top_rotated;
     bool      g_touching = false;
     std::uint32_t g_held = 0;      /* bit per Settings::NativeButton */
     float     g_pad_x = 0.0f;
@@ -103,6 +119,11 @@ void Start() {
 
     char err[256] = "";
     g_server = bs_server_create(g_source, &cfg, err, sizeof(err));
+    /* Said now, produced later: the top screen is only read back while
+     * somebody is watching it, and nobody may ask for a screen the
+     * server has not admitted to. */
+    if (g_server)
+        bs_server_offer_top(g_server);
     if (!g_server) {
         std::fprintf(stderr, "bottom_screen: %s\n", err);
         g_source->destroy(g_source->self);
@@ -122,11 +143,110 @@ void Stop() {
         g_source = nullptr;
     }
     g_tried = false;
+    /* After the server, which is what was reading from it. */
+    if (g_top_source) {
+        g_top_source->destroy(g_top_source->self);
+        std::free(g_top_source);
+        g_top_source = nullptr;
+    }
+    g_top_width = g_top_height = 0;
     g_width = g_height = 0;
 }
 
 bool IsRunning() {
     return g_server != nullptr;
+}
+
+/*
+ * Whether the top screen is worth producing at all.
+ *
+ * Asked by every renderer before it reads anything back, because a
+ * readback is a stall on the thread drawing the game. With the option
+ * switched off in every client -- which is the normal state -- Azahar
+ * does exactly the work it did before this existed.
+ */
+BsServer* Server() {
+    return g_server;
+}
+
+namespace {
+void (*g_frame_hook)() = nullptr;
+}
+
+void SetFrameHook(void (*fn)()) {
+    g_frame_hook = fn;
+}
+
+bool WantsTopScreen() {
+    return g_server && bs_server_wants_screen(g_server, BS_SCREEN_TOP);
+}
+
+void SubmitTopScreenRGBA(const void* rgba, int width, int height, bool rotate) {
+    if (!g_server || !rgba || width <= 0 || height <= 0)
+        return;
+
+    const int out_w = rotate ? height : width;
+    const int out_h = rotate ? width : height;
+
+    if (!g_top_source) {
+        /*
+         * Never starts the server. The bottom screen is what opens the
+         * port and settles the console and the frame rate; this attaches
+         * to what is already there, or does nothing.
+         */
+        g_top_source = bs_mailbox_create(BS_CONSOLE_3DS, out_w, out_h, 60,
+                                         BS_PIXFMT_RGBA, 0, 0);
+        if (!g_top_source)
+            return;
+        g_top_width = out_w;
+        g_top_height = out_h;
+        bs_server_set_top_source(g_server, g_top_source);
+    } else if (out_w != g_top_width || out_h != g_top_height) {
+        if (bs_mailbox_resize(g_top_source, out_w, out_h)) {
+            g_top_width = out_w;
+            g_top_height = out_h;
+        }
+    }
+
+    if (!rotate) {
+        bs_mailbox_submit(g_top_source, rgba, width * 4);
+        return;
+    }
+
+    /* The same quarter turn the bottom screen needs, and for the same
+     * reason: the panels are mounted in portrait and the framebuffer
+     * follows the hardware. */
+    const std::uint8_t* in = static_cast<const std::uint8_t*>(rgba);
+    g_top_rotated.resize(static_cast<std::size_t>(width) * height * 4);
+    for (int y = 0; y < height; y++) {
+        const std::uint8_t* src = in + static_cast<std::size_t>(y) * width * 4;
+        for (int x = 0; x < width; x++) {
+            const std::size_t dst = ((static_cast<std::size_t>(width - 1 - x) * height) + y) * 4;
+            std::memcpy(&g_top_rotated[dst], src + static_cast<std::size_t>(x) * 4, 4);
+        }
+    }
+    bs_mailbox_submit(g_top_source, g_top_rotated.data(), height * 4);
+}
+
+void SubmitTopScreenGL(BsTextureHandle texture) {
+    if (texture == 0 || !WantsTopScreen())
+        return;
+
+    glBindTexture(GL_TEXTURE_2D, texture);
+    GLint tw = 0, th = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &tw);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &th);
+    if (tw <= 0 || th <= 0) {
+        glBindTexture(GL_TEXTURE_2D, 0);
+        return;
+    }
+
+    g_top_pixels.resize(static_cast<std::size_t>(tw) * th * 4);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, g_top_pixels.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    SubmitTopScreenRGBA(g_top_pixels.data(), tw, th, true);
 }
 
 void SubmitBottomScreenGL(BsTextureHandle texture) {
@@ -213,9 +333,39 @@ void SubmitBottomScreenRGBA(const void* rgba, int width, int height, bool rotate
     bs_mailbox_submit(g_source, g_rotated.data(), height * 4);
 }
 
-void ApplyInput(Frontend::EmuWindow& window, const Layout::FramebufferLayout& layout) {
+void ApplyInput(Frontend::EmuWindow& primary, Frontend::EmuWindow* secondary) {
+    /*
+     * An answer to the machine's own question arrives on a client's
+     * receiving thread; this hands it to the applet waiting for it, on
+     * the render thread, which is a thread the emulator already owns.
+     * Here rather than in a hook of its own because this already runs
+     * once a frame for exactly the same reason.
+     */
+    if (g_frame_hook)
+        g_frame_hook();
+
     if (!g_server)
         return;
+
+    /*
+     * Which window owns the touchscreen.
+     *
+     * Under SeparateWindows the two screens live in two windows, and
+     * EmuWindow::TouchPressed rejects outright any touch aimed at the
+     * one showing the top screen -- silently, by returning false. Every
+     * tap from a client was landing there and being dropped: they
+     * arrived, they were converted, and the check threw them away.
+     *
+     * The rule is the emulator's own, from IsWithinTouchscreen: with the
+     * screens unswapped the touchscreen is on the secondary window, and
+     * swapping moves it to the primary.
+     */
+    Frontend::EmuWindow* window = &primary;
+    if (Settings::values.layout_option.GetValue() == Settings::LayoutOption::SeparateWindows &&
+        secondary && !Settings::values.swap_screen.GetValue()) {
+        window = secondary;
+    }
+    const Layout::FramebufferLayout& layout = window->GetFramebufferLayout();
 
     BsInputState in;
     bs_mailbox_input(g_source, &in);
@@ -240,7 +390,7 @@ void ApplyInput(Frontend::EmuWindow& window, const Layout::FramebufferLayout& la
         const unsigned y = r.top + static_cast<unsigned>(fy * r.GetHeight());
 
         if (!g_touching) {
-            window.TouchPressed(x, y);
+            window->TouchPressed(x, y);
             g_touching = true;
             static bool announced = false;
             if (!announced) {
@@ -249,10 +399,10 @@ void ApplyInput(Frontend::EmuWindow& window, const Layout::FramebufferLayout& la
                              in.touch_x, in.touch_y);
             }
         } else {
-            window.TouchMoved(x, y);
+            window->TouchMoved(x, y);
         }
     } else if (g_touching) {
-        window.TouchReleased();
+        window->TouchReleased();
         g_touching = false;
     }
 

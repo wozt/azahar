@@ -11,6 +11,8 @@ add_library(citra_qt STATIC EXCLUDE_FROM_ALL
     aboutdialog.cpp
     aboutdialog.h
     aboutdialog.ui
+    bottom_screen_applets.cpp
+    bottom_screen_applets.h
     applets/mii_selector.cpp
     applets/mii_selector.h
     applets/swkbd.cpp
@@ -297,6 +299,15 @@ endif()
 create_target_directory_groups(citra_qt)
 
 target_link_libraries(citra_qt PRIVATE audio_core citra_common citra_core input_common network video_core)
+
+# The keyboard and the Mii selector ask the stream's clients from here,
+# because this is where the dialogs they fall back to live. Attached
+# from this side because video_core is configured first, so a check for
+# this target from over there is always false.
+if (TARGET bottom_screen_c)
+    target_link_libraries(citra_qt PRIVATE bottom_screen_c)
+    target_compile_definitions(citra_qt PRIVATE BOTTOM_SCREEN_ENABLED)
+endif()
 target_link_libraries(citra_qt PRIVATE Boost::boost nihstro-headers Qt6::Widgets Qt6::Multimedia Qt6::Concurrent)
 target_link_libraries(citra_qt PRIVATE ${PLATFORM_LIBRARIES} Threads::Threads)
 

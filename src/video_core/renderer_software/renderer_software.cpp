@@ -49,7 +49,17 @@ void RendererSoftware::PrepareRenderTarget() {
         BottomScreen::SubmitBottomScreenRGBA(bottom.pixels.data(),
                                              static_cast<int>(bottom.height),
                                              static_cast<int>(bottom.width), false);
-        BottomScreen::ApplyInput(render_window, render_window.GetFramebufferLayout());
+        BottomScreen::ApplyInput(render_window, secondary_window);
+    }
+    /* And the top screen, for a client that asked for it. Guarded
+     * separately rather than nested: this renderer keeps both, and
+     * whether the bottom one has pixels this frame says nothing about
+     * the other. */
+    const auto& top = screen_infos[0];
+    if (BottomScreen::WantsTopScreen() && !top.pixels.empty()) {
+        BottomScreen::SubmitTopScreenRGBA(top.pixels.data(),
+                                          static_cast<int>(top.height),
+                                          static_cast<int>(top.width), false);
     }
 #endif
 }

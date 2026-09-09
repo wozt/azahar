@@ -37,6 +37,11 @@ struct FramebufferLayout;
  * over; everything after that is shared.
  */
 
+/* The server's own type, so Server() below hands back the same one
+ * bs_server.h defines rather than a different type of the same name
+ * living inside this namespace. */
+struct BsServer;
+
 namespace BottomScreen {
 
 /* Idempotent. Nothing opens until a frame has actually been submitted,
@@ -67,6 +72,38 @@ void SubmitBottomScreenGL(BsTextureHandle texture);
 void SubmitBottomScreenRGBA(const void* rgba, int width, int height, bool rotate);
 
 /*
+ * The top screen, for a client that asked for it.
+ *
+ * WantsTopScreen is the question every renderer asks before doing any of
+ * the work: a readback stalls the thread drawing the game, and a screen
+ * nobody has switched on should cost nothing. Neither of these ever
+ * starts the server -- the bottom screen opens the port, and these
+ * attach to what is already running.
+ */
+/*
+ * The running server, or nullptr.
+ *
+ * For the applets, which need to ask it questions and are not part of
+ * this file: the keyboard and the Mii selector live in the Qt frontend,
+ * because that is where the dialogs they fall back to live.
+ */
+BsServer* Server();
+
+/*
+ * Something to run once a frame, installed by the frontend.
+ *
+ * The applets live in citra_qt, because that is where the dialogs they
+ * fall back to live, and video_core has no business including the Qt
+ * frontend. So the frontend hands this a function instead of the bridge
+ * reaching upwards for one.
+ */
+void SetFrameHook(void (*fn)());
+
+bool WantsTopScreen();
+void SubmitTopScreenGL(BsTextureHandle texture);
+void SubmitTopScreenRGBA(const void* rgba, int width, int height, bool rotate);
+
+/*
  * Pushes what clients have sent into the window, once per frame from the
  * same place the picture is taken so the two stay on one clock.
  *
@@ -74,7 +111,12 @@ void SubmitBottomScreenRGBA(const void* rgba, int width, int height, bool rotate
  * works out the screen itself -- passing console pixels straight in
  * would land every tap in the wrong place.
  */
-void ApplyInput(Frontend::EmuWindow& window, const Layout::FramebufferLayout& layout);
+/*
+ * Both windows, because under the SeparateWindows layout the touchscreen
+ * is on one of them and the emulator refuses a touch aimed at the other.
+ * Pass the secondary as null where there is none.
+ */
+void ApplyInput(Frontend::EmuWindow& primary, Frontend::EmuWindow* secondary);
 
 /*
  * True while a client holds the given Settings::NativeButton. Merged

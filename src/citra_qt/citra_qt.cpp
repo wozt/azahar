@@ -40,6 +40,10 @@
 #include "citra_meta/common_strings.h"
 #include "citra_qt/aboutdialog.h"
 #include "citra_qt/applets/mii_selector.h"
+#ifdef BOTTOM_SCREEN_ENABLED
+#include "citra_qt/bottom_screen_applets.h"
+#include "video_core/bottom_screen_bridge.h"
+#endif
 #include "citra_qt/applets/swkbd.h"
 #include "citra_qt/bootmanager.h"
 #include "citra_qt/camera/qt_multimedia_camera.h"
@@ -4492,8 +4496,22 @@ int LaunchQtFrontend(int argc, char* argv[]) {
     // Register frontend applets
     Frontend::RegisterDefaultApplets(system);
 
+#ifdef BOTTOM_SCREEN_ENABLED
+    /*
+     * Wrapped, not replaced: the question goes to whoever is watching
+     * the stream when there is anybody, and falls through to the dialog
+     * on this desktop when there is not. Nobody watching is the ordinary
+     * case and behaves exactly as it did before this existed.
+     */
+    system.RegisterMiiSelector(
+        BottomScreen::WrapMiiSelector(std::make_shared<QtMiiSelector>(main_window)));
+    system.RegisterSoftwareKeyboard(
+        BottomScreen::WrapKeyboard(std::make_shared<QtKeyboard>(main_window)));
+    BottomScreen::SetFrameHook(&BottomScreen::PollApplets);
+#else
     system.RegisterMiiSelector(std::make_shared<QtMiiSelector>(main_window));
     system.RegisterSoftwareKeyboard(std::make_shared<QtKeyboard>(main_window));
+#endif
 
 #ifdef __APPLE__
     // Register microphone permission check.

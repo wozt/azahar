@@ -194,15 +194,19 @@ void RendererVulkan::PrepareRendertarget() {
 
 #ifdef BOTTOM_SCREEN_ENABLED
     // screen_infos[2] is the bottom screen: fb_id 1, the one
-    // color_fill_bottom applies to.
-    SubmitBottomScreenToBridge();
+    // color_fill_bottom applies to. screen_infos[0] is the top screen's
+    // left eye, sent only to a client that asked for it -- everything
+    // below stalls the scheduler, so it is not done speculatively.
+    SubmitScreenToBridge(2, false);
+    if (BottomScreen::WantsTopScreen())
+        SubmitScreenToBridge(0, true);
 #endif
 }
 
 #ifdef BOTTOM_SCREEN_ENABLED
 /*
- * Copies the bottom screen out of whatever image is currently standing
- * in for it and hands it to bottom_screen_server.
+ * Copies one screen out of whatever image is currently standing in for
+ * it and hands it to bottom_screen_server.
  *
  * The region matters: when the rasterizer accelerates the display, the
  * image is one of its surfaces and the screen is a rectangle inside it,
@@ -214,8 +218,8 @@ void RendererVulkan::PrepareRendertarget() {
  * so far; if it ever is, the answer is a ring of staging buffers read a
  * frame or two late, not a cleverer copy.
  */
-void RendererVulkan::SubmitBottomScreenToBridge() {
-    const auto& info = screen_infos[2];
+void RendererVulkan::SubmitScreenToBridge(int index, bool top) {
+    const auto& info = screen_infos[index];
     if (!info.display_image) {
         return;
     }
@@ -374,8 +378,12 @@ void RendererVulkan::SubmitBottomScreenToBridge() {
     });
     scheduler.Finish();
 
-    BottomScreen::SubmitBottomScreenRGBA(alloc_info.pMappedData, width, height, true);
-    BottomScreen::ApplyInput(render_window, render_window.GetFramebufferLayout());
+    if (top) {
+        BottomScreen::SubmitTopScreenRGBA(alloc_info.pMappedData, width, height, true);
+    } else {
+        BottomScreen::SubmitBottomScreenRGBA(alloc_info.pMappedData, width, height, true);
+        BottomScreen::ApplyInput(render_window, secondary_window);
+    }
 
     vmaDestroyBuffer(instance.GetAllocator(), staging, allocation);
     vmaDestroyImage(instance.GetAllocator(), scratch, image_allocation);

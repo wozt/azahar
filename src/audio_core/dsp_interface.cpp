@@ -41,6 +41,24 @@ void DspInterface::EnableStretching(bool enable) {
 }
 
 void DspInterface::OutputFrame(StereoFrame16 frame) {
+#ifdef BOTTOM_SCREEN_ENABLED
+    /*
+     * Taken where the DSP produces sound, not where a sink consumes it.
+     *
+     * This used to sit in OutputCallback, which is the callback a sink
+     * invokes to ask for samples -- so with no output device configured
+     * nothing ever called it and the stream was silent, on every
+     * renderer. It also ran at the sink's rate while the mailbox was
+     * created for the DSP's 32728Hz, which would have pitched the sound
+     * down by half again if it had ever been heard.
+     *
+     * Before the `if (!sink)` below, deliberately: whether this machine
+     * has anywhere to play sound is not the stream's business.
+     */
+    BottomScreen::SubmitAudio(frame.data()->data(),
+                              static_cast<int>(frame.size()));
+#endif
+
     if (!sink) {
         return;
     }
@@ -58,6 +76,11 @@ void DspInterface::OutputFrame(StereoFrame16 frame) {
 }
 
 void DspInterface::OutputSample(std::array<s16, 2> sample) {
+#ifdef BOTTOM_SCREEN_ENABLED
+    /* The same tap, for the one-sample path. */
+    BottomScreen::SubmitAudio(sample.data(), 1);
+#endif
+
     if (!sink) {
         return;
     }
@@ -122,11 +145,6 @@ void DspInterface::OutputCallback(s16* buffer, std::size_t num_frames) {
         }
     }
 
-#ifdef BOTTOM_SCREEN_ENABLED
-    // The block on its way to the speakers, taken here so it does not
-    // depend on which sink is in use.
-    BottomScreen::SubmitAudio(buffer, static_cast<int>(num_frames));
-#endif
 }
 
 } // namespace AudioCore

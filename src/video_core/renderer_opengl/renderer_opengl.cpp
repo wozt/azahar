@@ -218,7 +218,10 @@ void RendererOpenGL::PrepareRendertarget() {
     // color_fill_bottom applies to. Taken here, where it has just been
     // loaded and is still bound to nothing else.
     BottomScreen::SubmitBottomScreenGL(screen_infos[2].display_texture);
-    BottomScreen::ApplyInput(render_window, render_window.GetFramebufferLayout());
+    // And the top screen for whoever asked for it: screen_infos[0], the
+    // left eye. Returns before reading anything back if nobody has.
+    BottomScreen::SubmitTopScreenGL(screen_infos[0].display_texture);
+    BottomScreen::ApplyInput(render_window, secondary_window);
 #endif
 }
 

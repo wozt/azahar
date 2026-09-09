@@ -272,6 +272,7 @@ if (EXISTS "${BOTTOM_SCREEN_DIR}/bs_server.c")
     target_link_libraries(video_core PRIVATE bottom_screen_c)
     target_compile_definitions(video_core PRIVATE BOTTOM_SCREEN_ENABLED)
 
+
     message(STATUS "bottom_screen_server: enabled for Azahar (${BOTTOM_SCREEN_DIR})")
 else()
     message(STATUS "bottom_screen_server: not found, building Azahar without it")
