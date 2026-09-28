@@ -18,6 +18,9 @@
 #include "core/hle/service/apt/ns.h"
 #include "core/hle/service/cfg/cfg.h"
 #include "core/hle/service/gsp/gsp_gpu.h"
+#ifdef BOTTOM_SCREEN_ENABLED
+#include "video_core/bottom_screen_bridge.h"
+#endif
 #include "video_core/utils.h"
 
 SERVICE_CONSTRUCT_IMPL(Service::APT::AppletManager)
@@ -1746,7 +1749,11 @@ void AppletManager::ButtonUpdateEvent(std::uintptr_t user_data, s64 cycles_late)
     // where the home menu was already loaded by the user (last condition).
 
     if (GetAppletSlot(AppletSlot::HomeMenu)->registered) {
-        const bool home_state = home_button->GetStatus();
+        bool home_state = home_button->GetStatus();
+#ifdef BOTTOM_SCREEN_ENABLED
+        home_state = home_state ||
+                     BottomScreen::IsButtonHeld(Settings::NativeButton::Home);
+#endif
         if (home_state && !last_home_button_state) {
             SendNotification(Notification::HomeButtonSingle);
         }

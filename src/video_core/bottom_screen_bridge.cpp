@@ -51,9 +51,9 @@ namespace {
 
     /*
      * BsButton -> the 3DS pad bit. The console has no ZL/ZR on an Old
-     * 3DS and no HOME the emulator exposes here, so those map to
-     * nothing and are dropped rather than treated as an error -- a
-     * shared protocol means clients will send them.
+     * 3DS, but those buttons remain valid on a New 3DS. HOME is not a
+     * HID pad bit; Azahar polls its NativeButton separately in the APT
+     * applet manager, where IsButtonHeld() is merged as well.
      */
     int PadBit(int bsButton) {
         using namespace Settings;
@@ -68,6 +68,7 @@ namespace {
         case BS_BTN_ZR:     return static_cast<int>(NativeButton::ZR);
         case BS_BTN_START:  return static_cast<int>(NativeButton::Start);
         case BS_BTN_SELECT: return static_cast<int>(NativeButton::Select);
+        case BS_BTN_HOME:   return static_cast<int>(NativeButton::Home);
         case BS_BTN_UP:     return static_cast<int>(NativeButton::Up);
         case BS_BTN_DOWN:   return static_cast<int>(NativeButton::Down);
         case BS_BTN_LEFT:   return static_cast<int>(NativeButton::Left);
