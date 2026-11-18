@@ -464,7 +464,6 @@ S\'esperen errors gràfics temporals quan estigue activat.</string>
     <string name="core_error_artic_disconnected">Artic Base s\'ha desconnectat</string>
     <string name="core_error_n3ds_application">El fitxer es una aplicació de New 3DS</string>
     <string name="core_error_core_exception_raised">Es va produir una exepció en el nucli</string>
-    <string name="core_error_memory_exception_raised">Es va produir una excepció de memòria</string>
     <string name="core_error_shutdown_requested">Es va sol·licitar el tancament</string>
     <string name="core_error_unknown">Error desconegut</string>
 
@@ -615,7 +614,6 @@ S\'esperen errors gràfics temporals quan estigue activat.</string>
     <string name="unsupported_encrypted">Aplicació cifrada no suportada</string>
     <string name="invalid_system_mode">Mode de sistema no vàlid</string>
     <string name="invalid_system_mode_message">Les aplicacions exclusives de New 3DS no es poden carregar sense activar el mode New 3DS.</string>
-
     <!-- Disk Shader Cache -->
     <string name="preparing_shaders">Preparant ombrejadors</string>
     <string name="building_shaders">Construint%s</string>
@@ -734,15 +732,6 @@ S\'esperen errors gràfics temporals quan estigue activat.</string>
     <!-- Black backgrounds theme -->
     <string name="use_black_backgrounds">Fons foscos</string>
     <string name="use_black_backgrounds_description">Quan uses el tema fosc, s\'aplicaran fons foscos.</string>
-
-    <!-- Region names -->
-    <string name="system_region_jpn">JPN</string>
-    <string name="system_region_usa">USA</string>
-    <string name="system_region_eur">EUR</string>
-    <string name="system_region_aus">AUS</string>
-    <string name="system_region_chn">CHN</string>
-    <string name="system_region_kor">KOR</string>
-    <string name="system_region_twn">TWN</string>
 
     <!-- Language names -->
     <string name="language_japanese">Japanese (日本語)</string>

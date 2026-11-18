@@ -439,7 +439,6 @@
     <string name="core_error_artic_disconnected">Odłączono Artic Base</string>
     <string name="core_error_n3ds_application">Aplikacja jest dostępna wyłącznie na konsolę New 3DS</string>
     <string name="core_error_core_exception_raised">Wystąpił błąd rdzenia</string>
-    <string name="core_error_memory_exception_raised">Wystąpił błąd pamięci</string>
     <string name="core_error_shutdown_requested">Prośba o zamknięcie</string>
     <string name="core_error_unknown">Nieznany błąd</string>
 
@@ -584,7 +583,6 @@
     <string name="unsupported_encrypted">Nieobsługiwana zaszyfrowana aplikacja</string>
     <string name="invalid_system_mode">Nieprawidłowy moduł systemu</string>
     <string name="invalid_system_mode_message">Aplikacje dostępne wyłącznie na konsoli New 3DS nie mogą być uruchamiane bez włączenia trybu New 3DS.</string>
-
     <!-- Disk Shader Cache -->
     <string name="preparing_shaders">Przygotowanie shaderów</string>
     <string name="building_shaders">Tworzenie%s</string>
@@ -705,15 +703,6 @@
     <!-- Black backgrounds theme -->
     <string name="use_black_backgrounds">Czarne tło</string>
     <string name="use_black_backgrounds_description">W przypadku korzystania z ciemnego motywu należy stosować czarne tło.</string>
-
-    <!-- Region names -->
-    <string name="system_region_jpn">JPN</string>
-    <string name="system_region_usa">USA</string>
-    <string name="system_region_eur">EUR</string>
-    <string name="system_region_aus">AUS</string>
-    <string name="system_region_chn">CHN</string>
-    <string name="system_region_kor">KOR</string>
-    <string name="system_region_twn">TWN</string>
 
     <!-- Language names -->
     <string name="language_japanese">Japoński (日本語)</string>

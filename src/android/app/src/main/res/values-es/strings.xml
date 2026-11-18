@@ -464,7 +464,6 @@ Se esperan fallos gráficos temporales cuando ésta esté activado.</string>
     <string name="core_error_artic_disconnected">Artic Base se desconectó</string>
     <string name="core_error_n3ds_application">El archivo es una aplicación de New 3DS</string>
     <string name="core_error_core_exception_raised">Se produjo una excepción en el núcleo</string>
-    <string name="core_error_memory_exception_raised">Se produjo una excepción de memoria</string>
     <string name="core_error_shutdown_requested">Se solicitó el cierre</string>
     <string name="core_error_unknown">Error desconocido</string>
 
@@ -615,7 +614,6 @@ Se esperan fallos gráficos temporales cuando ésta esté activado.</string>
     <string name="unsupported_encrypted">Aplicación cifrada no soportada</string>
     <string name="invalid_system_mode">Modo de sistema no válido</string>
     <string name="invalid_system_mode_message">Las aplicaciones exclusivas de New 3DS no se pueden cargar sin activar el modo New 3DS.</string>
-
     <!-- Disk Shader Cache -->
     <string name="preparing_shaders">Preparando shaders</string>
     <string name="building_shaders">Construyendo%s</string>
@@ -735,15 +733,6 @@ Se esperan fallos gráficos temporales cuando ésta esté activado.</string>
     <!-- Black backgrounds theme -->
     <string name="use_black_backgrounds">Fondos Oscuros</string>
     <string name="use_black_backgrounds_description">Cuando uses el tema oscuro, se aplicarán fondos oscuros.</string>
-
-    <!-- Region names -->
-    <string name="system_region_jpn">JPN</string>
-    <string name="system_region_usa">USA</string>
-    <string name="system_region_eur">EUR</string>
-    <string name="system_region_aus">AUS</string>
-    <string name="system_region_chn">CHN</string>
-    <string name="system_region_kor">KOR</string>
-    <string name="system_region_twn">TWN</string>
 
     <!-- Language names -->
     <string name="language_japanese">Japonés (日本語)</string>
